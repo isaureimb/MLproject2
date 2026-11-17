@@ -1,0 +1,36 @@
+from pathlib import Path
+import pandas as pd
+
+
+def prepare_cohort_b() -> None:
+    """
+    Audit ID linkage between glucose.csv and metadata.csv, filter for Cohort B,
+    and save clean processed CSV files while keeping raw data untouched.
+    """
+    project_root = Path(__file__).resolve().parents[3]
+    data_path = project_root / "data"
+    out_path = data_path / "processed"
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    glucose_df = pd.read_csv(data_path / "glucose.csv")
+    metadata_df = pd.read_csv(data_path / "metadata.csv")
+
+    assert metadata_df["id"].is_unique, "Duplicate IDs found in metadata.csv"
+
+    # Audit counts
+    g_ids = set(glucose_df["user_id"])
+    m_ids = set(metadata_df["id"])
+    print(f"Glucose IDs: {len(g_ids)} | Metadata IDs: {len(m_ids)} | Matched: {len(g_ids & m_ids)}")
+    print(f"Unmatched glucose IDs: {len(g_ids - m_ids)} | Unmatched metadata IDs: {len(m_ids - g_ids)}")
+
+    # Filter Cohort B and keep exact glucose.csv columns
+    cohort_b_ids = set(metadata_df.loc[metadata_df["cohort"] == "cohort_b", "id"])
+    cohort_b_glucose = glucose_df[glucose_df["user_id"].isin(cohort_b_ids)]
+
+    print(f"Cohort B participants: {cohort_b_glucose['user_id'].nunique()} | Rows: {len(cohort_b_glucose)}")
+
+    cohort_b_glucose.to_csv(out_path / "glucose_cohort_b.csv", index=False)
+
+
+if __name__ == "__main__":
+    prepare_cohort_b()
