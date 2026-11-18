@@ -34,3 +34,4 @@ def prepare_cohort_b() -> None:
 
 if __name__ == "__main__":
     prepare_cohort_b()
+    
