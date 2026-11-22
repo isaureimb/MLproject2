@@ -117,7 +117,31 @@ def plot_participant_mean_cv(df, id_col="user_id", val_col="val", min_readings=9
     fig.tight_layout()
     return stats
 
-def plot_glucose_evol_day(df, id_col="user_id", date_col="date", time_col="read_at", val_col="val",
+def add_date_time_columns(df, ts_col="read_at", date_col="date", time_col="time"):
+    """
+    Return a copy of `df` with the timestamp split into a date column and a time column.
+
+    Args:
+        df (pd.DataFrame): one row per reading, with a full timestamp column.
+        ts_col (str): column holding the full timestamp.
+        date_col (str): name of the new date column ("YYYY-MM-DD").
+        time_col (str): name of the new time-of-day column ("HH:MM:SS").
+
+    Returns:
+        pd.DataFrame: a copy of df with two extra columns.
+    """
+    out = df.copy()
+    if pd.api.types.is_datetime64_any_dtype(out[ts_col]):
+        out[date_col] = out[ts_col].dt.strftime("%Y-%m-%d")
+        out[time_col] = out[ts_col].dt.strftime("%H:%M:%S")
+    else:
+        text = out[ts_col].astype(str)
+        out[date_col] = text.str[:10]    
+        time = text.str[11:19]
+        out[time_col] = time.mask(time == "", "00:00:00")
+    return out
+
+def plot_glucose_evol_day(df, id_col="user_id", read_at_col="read_at", val_col="val",
                    n_participants=5, start_hour=9, seed=42, max_gap_minutes=60):
     """
     Glucose curve over the first 24 h window of randomly drawn participants.
@@ -139,11 +163,12 @@ def plot_glucose_evol_day(df, id_col="user_id", date_col="date", time_col="read_
     rng = np.random.default_rng(seed)
     sample_ids = rng.choice(all_ids, size=min(n_participants, len(all_ids)), replace=False)
 
-    sample = df.loc[df[id_col].isin(sample_ids), [id_col, date_col, time_col, val_col]].copy()
-    sample["datetime"] = pd.to_datetime(sample[date_col] + " " + sample[time_col])
+    sample = df.loc[df[id_col].isin(sample_ids)]
+    sample = add_date_time_columns(sample, ts_col=read_at_col, date_col="date", time_col="time")
+    sample["datetime"] = pd.to_datetime(sample["date"] + " " + sample["time"])
 
     #Window start = start_hour on each participant's first recorded date
-    first_date = pd.to_datetime(sample[date_col]).groupby(sample[id_col]).transform("min")
+    first_date = pd.to_datetime(sample["date"]).groupby(sample[id_col]).transform("min")
     window_start = first_date + pd.Timedelta(hours=start_hour)
     sample["hours"] = (sample["datetime"] - window_start).dt.total_seconds() / 3600
     sample = sample[(sample["hours"] >= 0) & (sample["hours"] <= 24)]
@@ -179,7 +204,7 @@ def plot_glucose_evol_day(df, id_col="user_id", date_col="date", time_col="read_
     fig.tight_layout()
 
 
-def plot_daily_mean(df, id_col="user_id", date_col="date", val_col="val",
+def plot_daily_mean(df, id_col="user_id", ts_col="read_at", val_col="val",
                                     n_participants=30, min_readings_per_day=72,
                                     median_over_all=True, min_participants_for_median=20,
                                     seed=42):
@@ -201,6 +226,9 @@ def plot_daily_mean(df, id_col="user_id", date_col="date", val_col="val",
         seed (int): random seed, so the same participants are drawn at every run.
 
     """
+    df = add_date_time_columns(df, ts_col=ts_col, date_col="date", time_col="time")
+    date_col = "date"
+    
     #Mean glucose and number of readings for each participant and each date
     daily = (df.groupby([id_col, date_col])[val_col]
                .agg(n_readings="count", daily_mean="mean")
@@ -246,8 +274,8 @@ def plot_daily_mean(df, id_col="user_id", date_col="date", val_col="val",
     ax.legend()
     fig.tight_layout()
 
-def plot_hour_day_heatmap(df, participant_id=None, id_col="user_id", date_col="date",
-                          time_col="read_at", val_col="val", bin_minutes=60,
+def plot_hour_day_heatmap(df, participant_id=None, id_col="user_id",
+                          read_at_col="read_at", val_col="val", bin_minutes=60,
                           vmin=3, vmax=10, seed=42):
     """
     Heatmap of one participant's glucose: one row per recorded day, one column per
@@ -271,11 +299,12 @@ def plot_hour_day_heatmap(df, participant_id=None, id_col="user_id", date_col="d
     if participant_id is None:
         rng = np.random.default_rng(seed)
         participant_id = rng.choice(df[id_col].dropna().unique())
-    p = df.loc[df[id_col] == participant_id, [date_col, time_col, val_col]].copy()
+    p = df.loc[df[id_col] == participant_id]
+    p = add_date_time_columns(p, ts_col=read_at_col, date_col="date", time_col="time")
 
-    minutes = pd.to_timedelta(p[time_col]).dt.total_seconds() / 60
+    minutes = pd.to_timedelta(p["time"]).dt.total_seconds() / 60
     p["bin"] = (minutes // bin_minutes) * bin_minutes / 60
-    dates = pd.to_datetime(p[date_col])
+    dates = pd.to_datetime(p["date"])
     p["day"] = dates.rank(method="dense").astype(int)
 
     table = p.pivot_table(index="day", columns="bin", values=val_col, aggfunc="mean")
