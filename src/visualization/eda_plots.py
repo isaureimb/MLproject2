@@ -2,6 +2,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
+from src.datasets.features import compute_cgm_features, compute_targets_features, split_input_target
+
 def inter_individual_spread(df, id_col="user_id", val_col="val", stat="median"):
     """
     compute the median glucose value within each participants,and compute the minimum, 
@@ -330,3 +332,59 @@ def plot_hour_day_heatmap(df, participant_id=None, id_col="user_id",
                  f"({bin_minutes}-min bins, white = no data")
     fig.colorbar(im, ax=ax, label="mean glucose (mmol/L)")
     fig.tight_layout()
+
+
+def plot_input_vs_target_mean(df, durations=(1, 3, 5, 7), id_col="user_id", val_col="val"):
+    """
+    one scatter plot per k: input mean vs target mean
+    and a summary panel with the Pearson correlation as a function of k, for the mean
+    and for the CV.
+
+    Args:
+        df (pd.DataFrame): cleaned glucose data
+        durations (tuple[int]): input durations to compare.
+        id_col (str): participant identifier column.
+        val_col (str): glucose value column.
+    """
+    rows, pairs = [], {}
+    for k in durations:
+        input_df, target_df = split_input_target(df, k_days=k, id_col=id_col)
+        X = compute_cgm_features(input_df, id_col=id_col, val_col=val_col)
+        y = compute_targets_features(target_df, id_col=id_col, val_col=val_col)
+        both = X[["cgm_mean", "cgm_cv"]].join(y, how="inner")
+        pairs[k] = both
+        rows.append({
+            "k_days": k,
+            "n_participants": len(both),
+            "r_mean": both["cgm_mean"].corr(both["y_mean"]),
+            "r_cv": both["cgm_cv"].corr(both["y_cv"]),
+            "mad_mean_mmol": (both["cgm_mean"] - both["y_mean"]).abs().mean(),
+            "mad_cv_points": (both["cgm_cv"] - both["y_cv"]).abs().mean(),
+        })
+    summary = pd.DataFrame(rows).set_index("k_days")
+
+    n = len(durations)
+    fig, axes = plt.subplots(1, n + 1, figsize=(4 * (n + 1), 4))
+    all_vals = pd.concat([pairs[k][["cgm_mean", "y_mean"]] for k in durations]).stack()
+    lims = (all_vals.min() - 0.2, all_vals.max() + 0.2)
+
+    for ax, k in zip(axes[:n], durations):
+        both = pairs[k]
+        ax.scatter(both["cgm_mean"], both["y_mean"], s=8, alpha=0.5)
+        ax.plot(lims, lims, color="grey", linestyle="--", linewidth=1)  
+        ax.set(xlim=lims, ylim=lims, aspect="equal",
+               xlabel=f"mean of days {8 - k}-7 (mmol/L)" if k > 1 else "mean of day 7 (mmol/L)",
+               title=f"k = {k} day(s): r = {summary.loc[k, 'r_mean']:.2f}")
+    axes[0].set_ylabel("mean of days 8-12 (mmol/L)")
+
+    ax = axes[n]
+    ax.plot(summary.index, summary["r_mean"], marker="o", label="mean glucose")
+    ax.plot(summary.index, summary["r_cv"], marker="s", label="CV")
+    ax.set(xticks=list(durations), ylim=(0, 1), xlabel="input duration k (days)",
+           ylabel="Pearson r with days 8-12", title="Correlation vs duration")
+    ax.grid(alpha=0.3)
+    ax.legend()
+
+    fig.suptitle(f"Stability of mean glucose and CV by input duration "
+                 f"({summary['n_participants'].iloc[0]} participants)")
+  

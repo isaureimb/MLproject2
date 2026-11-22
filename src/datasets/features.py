@@ -1,157 +1,101 @@
 import numpy as np
 import pandas as pd
 
+BLOCK_DAYS = 12
+TARGET_START_DAY = 7
 
-def build_xy_cgm_only(
-    split_df: pd.DataFrame,
-    k_days: int = 3,
-    target_start_day: int = 7,  # Jour 8 en indexation 0 (jours 7, 8, 9, 10, 11)
-    timezone: str = "Europe/Zurich",
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+def split_input_target(df, k_days=3, target_start_day=TARGET_START_DAY,
+                       block_days=BLOCK_DAYS, id_col="user_id", ts_col="read_at",
+                       timezone="Europe/Zurich"):
     """
-    Build feature matrix X (from days 1..k) and target matrix y (from days 8 to 12)
-    using only CGM glucose readings, with 1 row per participant.
+    Split each participant's 12-day block into an input window and a target window.
+
+    Input window  = the k days just before the target: day_idx in [target_start_day - k, target_start_day)
+                    (1-indexed: days 8-k .. 7).
+    Target window = day_idx >= target_start_day (1-indexed: days 8 .. 12).
+
+    Args:
+        df (pd.DataFrame): cleaned glucose dataset
+        k_days (int): number of input days (1, 3, 5 or 7).
+        target_start_day (int): 0-indexed first target day (7 = day 8).
+        block_days (int): expected number of days per participant.
+        id_col (str): participant identifier column.
+        ts_col (str): full timestamp column (UTC or with offset).
+        timezone (str): local timezone used to define days and hours.
+
+    Returns:
+        input_df (pd.DataFrame): readings of the input window.
+        target_df (pd.DataFrame): readings of the target window.
     """
-    if not (1 <= k_days <= target_start_day):
+    if not 1 <= k_days <= target_start_day:
         raise ValueError(f"k_days must be between 1 and {target_start_day}, got {k_days}")
 
-    df = split_df.copy()
-    ts_local = pd.to_datetime(df["read_at"], format="ISO8601", utc=True).dt.tz_convert(timezone)
-    df["local_date"] = ts_local.dt.date
+    out = df.copy()
+    out["ts_local"] = pd.to_datetime(out[ts_col], format="ISO8601", utc=True).dt.tz_convert(timezone)
+    out = out.sort_values([id_col, "ts_local"])
+    local_date = out["ts_local"].dt.date
+    out["day_idx"] = local_date.groupby(out[id_col]).transform(lambda s: pd.factorize(s)[0])
 
-    # Numérotation relative des jours 0..11 dans le bloc de 12 jours de chaque participant
-    df = df.sort_values(["user_id", "local_date", "read_at"])
-    df["day_idx"] = df.groupby("user_id")["local_date"].transform(
-        lambda s: pd.factorize(s)[0]
-    )
+    n_days = out.groupby(id_col)["day_idx"].max() + 1
+    bad = n_days[n_days != block_days]
+    if len(bad):
+        raise ValueError(f"{len(bad)} participant(s) do not have exactly {block_days} days "
+                         f"(e.g. {bad.index[0]} has {bad.iloc[0]})")
 
-    X_rows = []
-    y_rows = []
-
-    for uid, g in df.groupby("user_id", sort=True):
-        past = g.loc[g["day_idx"] < k_days, "val"].to_numpy()
-        future = g.loc[g["day_idx"] >= target_start_day, "val"].to_numpy()
-
-        past_mean = float(np.mean(past))
-        past_std = float(np.std(past, ddof=1))
-        past_cv = 100.0 * past_std / past_mean
-
-        X_rows.append({
-            "user_id": uid,
-            "cgm_mean": past_mean,
-            "cgm_std": past_std,
-            "cgm_cv": past_cv,
-            "cgm_min": float(np.min(past)),
-            "cgm_q25": float(np.percentile(past, 25)),
-            "cgm_median": float(np.median(past)),
-            "cgm_q75": float(np.percentile(past, 75)),
-            "cgm_max": float(np.max(past)),
-            "cgm_iqr": float(np.percentile(past, 75) - np.percentile(past, 25)),
-            "cgm_tir_39_100": float(np.mean((past >= 3.9) & (past <= 10.0)) * 100.0),
-            "cgm_coverage": float(len(past) / (k_days * 96.0)),
-        })
-
-        fut_mean = float(np.mean(future))
-        fut_std = float(np.std(future, ddof=1))
-        fut_cv = 100.0 * fut_std / fut_mean
-
-        y_rows.append({
-            "user_id": uid,
-            "y_mean": fut_mean,
-            "y_cv": fut_cv,
-        })
-
-    X_df = pd.DataFrame(X_rows).set_index("user_id")
-    y_df = pd.DataFrame(y_rows).set_index("user_id")
-    return X_df, y_df
+    first_input_day = target_start_day - k_days
+    input_df = out[(out["day_idx"] >= first_input_day) & (out["day_idx"] < target_start_day)]
+    target_df = out[out["day_idx"] >= target_start_day]
+    return input_df, target_df
 
 
-
-
-"""Caractéristiques supplémentaires, calculées sur les jours d'entrée.
-
-Ce fichier ajoute trois chiffres par personne, qui ne sont pas dans windowings.py :
-  1. le glucose moyen la nuit
-  2. le glucose moyen la journée
-  3. le plus long moment sans mesure (en heures)
-
-Découpage d'un bloc de 12 jours (on numérote les jours de 0 à 11) :
-  - les jours d'entrée sont ceux que le modèle a le droit de voir ;
-  - les jours 7 à 11 (jours 8 à 12) servent à la CIBLE et ne sont jamais utilisés ici.
-
-Les jours d'entrée se terminent toujours juste avant la cible, quelle que soit la durée :
-  1 jour  = jour 7                  (numéro 6)
-  3 jours = jours 5 à 7             (numéros 4 à 6)
-  5 jours = jours 3 à 7             (numéros 2 à 6)
-  7 jours = jours 1 à 7             (numéros 0 à 6)
-Ainsi, quand la durée change, la distance à la cible ne change pas.
-"""
-import pandas as pd
-
-# Plages horaires, en heure suisse. Ce sont des choix de départ, à faire valider.
-# Attention : "nuit" veut dire seulement "entre 0 h et 6 h sur l'horloge",
-# ce n'est pas une mesure du sommeil ni du jeûne.
-NUIT = (0, 6)  # de 0 h inclus à 6 h exclu
-JOUR = (8, 20)  # de 8 h inclus à 20 h exclu
-
-
-def build_features_extra(
-    split_df: pd.DataFrame,
-    k_days: int = 3,
-    target_start_day: int = 7,
-    timezone: str = "Europe/Zurich",
-) -> pd.DataFrame:
-    """Calcule les trois chiffres pour chaque personne.
-
-    Paramètres :
-        split_df : tableau des mesures (une ligne par mesure), avec les colonnes
-                   user_id (la personne), read_at (le moment) et val (le glucose).
-        k_days : nombre de jours d'entrée (1, 3, 5 ou 7).
-        target_start_day : numéro du premier jour de la cible (7 = jour 8).
-        timezone : fuseau horaire dans lequel on découpe les jours.
-
-    Renvoie un tableau avec une ligne par personne et trois colonnes.
+def compute_cgm_features(input_df, id_col="user_id", val_col="val",
+                         night_hours=(0, 6), day_hours=(8, 20)):
     """
-    # Garde-fou : on ne peut pas prendre plus de jours qu'il n'y en a avant la cible.
-    if not (1 <= k_days <= target_start_day):
-        raise ValueError(f"k_days doit être entre 1 et {target_start_day}, reçu {k_days}")
+    CGM features per participant, computed on the input window.
 
-    df = split_df.copy()
+    Features: mean, std, CV (%), min, P10, median, P90, max,
+    night mean and day mean.
 
-    # Les heures du fichier sont en heure mondiale (UTC). On les convertit en heure
-    # suisse pour que "la nuit" corresponde vraiment à la nuit des participants.
-    df["ts_local"] = pd.to_datetime(df["read_at"], format="ISO8601", utc=True).dt.tz_convert(timezone)
-    df["local_date"] = df["ts_local"].dt.date
+    Args:
+        input_df (pd.DataFrame): readings of the input window.
+        id_col (str): participant identifier column.
+        val_col (str): glucose value column.
+        night_hours (tuple[int, int]): night range in local hours, start < end (e.g. (0, 6)).
+        day_hours (tuple[int, int]): day range in local hours, start < end (e.g. (8, 20)).
 
-    # On met les mesures dans l'ordre, personne par personne.
-    df = df.sort_values(["user_id", "ts_local"])
+    Returns:
+        pd.DataFrame: one row per participant.
+    """
+    g = input_df.groupby(id_col)[val_col]
+    features = pd.DataFrame({
+        "cgm_mean": g.mean(),
+        "cgm_std": g.std(),  
+        "cgm_min": g.min(),
+        "cgm_p10": g.quantile(0.10),
+        "cgm_q25": g.quantile(0.25),
+        "cgm_median": g.median(),
+        "cgm_q75": g.quantile(0.75),
+        "cgm_p90": g.quantile(0.90),
+        "cgm_max": g.max(),
+    })
+    features.insert(2, "cgm_cv", 100 * features["cgm_std"] / features["cgm_mean"])
 
-    # On numérote les jours de chaque personne : 0 pour son premier jour, 1 pour le suivant...
-    # Chaque personne a un bloc de 12 jours de suite, donc les numéros vont de 0 à 11.
-    df["day_idx"] = df.groupby("user_id")["local_date"].transform(lambda s: pd.factorize(s)[0])
+    # Night and day means (ranges must not cross midnight)
+    hour = input_df["ts_local"].dt.hour
+    is_night = (hour >= night_hours[0]) & (hour < night_hours[1])
+    is_day = (hour >= day_hours[0]) & (hour < day_hours[1])
+    features["cgm_night_mean"] = input_df[is_night].groupby(id_col)[val_col].mean()
+    features["cgm_day_mean"] = input_df[is_day].groupby(id_col)[val_col].mean()
+    return features
 
-    # On ne garde que les jours d'entrée : ceux juste avant la cible.
-    premier_jour = target_start_day - k_days
-    fenetre = df[(df["day_idx"] >= premier_jour) & (df["day_idx"] < target_start_day)]
+def compute_targets_features(target_df, id_col="user_id", val_col="val"):
+    """
+    Targets per participant on the target window: mean glucose and CV (%)
 
-    lignes = []
-    for uid, g in fenetre.groupby("user_id", sort=True):
-        # Heure de chaque mesure (0 à 23)
-        heure = g["ts_local"].dt.hour
-
-        # Valeurs de glucose mesurées la nuit, puis la journée
-        nuit = g.loc[(heure >= NUIT[0]) & (heure < NUIT[1]), "val"]
-        jour = g.loc[(heure >= JOUR[0]) & (heure < JOUR[1]), "val"]
-
-        # Temps écoulé entre deux mesures qui se suivent, en heures.
-        # Normalement 0,25 h (15 minutes). Un grand nombre veut dire un trou.
-        ecarts = g["ts_local"].diff().dt.total_seconds() / 3600
-
-        lignes.append({
-            "user_id": uid,
-            "cgm_night_mean": nuit.mean(),  # vaut "vide" si aucune mesure la nuit
-            "cgm_day_mean": jour.mean(),
-            "cgm_longest_gap_h": ecarts.max() if len(ecarts) > 1 else 0.0,
-        })
-
-    return pd.DataFrame(lignes).set_index("user_id")
+    Returns:
+        pd.DataFrame: columns y_mean and y_cv (index = id_col).
+    """
+    g = target_df.groupby(id_col)[val_col]
+    targets = pd.DataFrame({"y_mean": g.mean()})
+    targets["y_cv"] = 100 * g.std() / targets["y_mean"]
+    return targets
