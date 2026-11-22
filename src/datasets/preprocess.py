@@ -20,7 +20,7 @@ def filter_physiological_outliers(
 
 
 def preprocess_glucose(
-    input_filename: str = "glucose_cohort_b.csv",
+    input_filename: str = "cohort_b_glucose_data.csv",
     output_filename: str = "glucose_cleaned.csv",
     timezone: str = "Europe/Zurich",
     bin_freq: str = "15min",

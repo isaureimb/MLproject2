@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 
 
-def prepare_cohort_b() -> None:
+def build_cohort_b_dataset() -> None:
     """
     Audit ID linkage between glucose.csv and metadata.csv, filter for Cohort B,
     and save clean processed CSV files while keeping raw data untouched.
@@ -34,9 +34,9 @@ def prepare_cohort_b() -> None:
     
     print(f"Cohort B participants: {cohort_b_glucose['user_id'].nunique()} | Rows: {len(cohort_b_glucose)}")
 
-    cohort_b_glucose.to_csv(out_path / "glucose_cohort_b.csv", index=False)
+    cohort_b_glucose.to_csv(out_path / "cohort_b_glucose_data.csv", index=False)
 
 
 if __name__ == "__main__":
-    prepare_cohort_b()
+    build_cohort_b_dataset()
     
