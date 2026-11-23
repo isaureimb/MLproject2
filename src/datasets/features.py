@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 BLOCK_DAYS = 12
 TARGET_START_DAY = 7
@@ -99,3 +100,24 @@ def compute_targets_features(target_df, id_col="user_id", val_col="val"):
     targets = pd.DataFrame({"y_mean": g.mean()})
     targets["y_cv"] = 100 * g.std() / targets["y_mean"]
     return targets
+
+def build_xy(df, k_days=3, **kwargs):
+    """
+    Convenience wrapper: split the windows, then compute features X and targets y.
+
+    Returns X and y with the same participants in the same order.
+    """
+    input_df, target_df = split_input_target(df, k_days=k_days)
+    X = compute_cgm_features(input_df, **kwargs)
+    y = compute_targets_features(target_df)
+    X, y = X.align(y, join="inner", axis=0)
+    
+    """
+    project_root = Path(__file__).resolve().parents[3]
+    data_path = project_root / "data"
+    out_path = data_path / "processed"
+    out_path.mkdir(parents=True, exist_ok=True)
+    X.to_csv(out_path / f"input_glucose_features_{k_days}_days.csv", index=False)
+    y.to_csv(out_path / "target_glucose_features.csv", index=False)
+    """
+    return X, y
