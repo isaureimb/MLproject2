@@ -34,7 +34,7 @@ from sklearn.preprocessing import StandardScaler
 from src.datasets.features import build_xy
 
 
-def make_models() -> dict:
+def make_models(target: str = "y_mean") -> dict:
     """Crée trois modèles neufs, avec des réglages volontairement modestes.
 
     Réglages modestes = moins de risque que le modèle apprenne les détails par cœur.
@@ -44,11 +44,12 @@ def make_models() -> dict:
     il met la valeur médiane de l'entraînement à la place.
     StandardScaler : remet les chiffres à la même échelle (utile pour Ridge).
     """
+    alpha_ridge = 10.0 if target == "y_mean" else 5.0
     return {
         "Ridge": make_pipeline(
             SimpleImputer(strategy="median"),
             StandardScaler(),
-            Ridge(alpha=1.0),
+            Ridge(alpha=alpha_ridge),
         ),
         "RandomForest": make_pipeline(
             SimpleImputer(strategy="median"),
@@ -100,7 +101,7 @@ def evaluate_models(horizons=(1, 3, 5, 7)) -> pd.DataFrame:
             X_va, y_va = get_xy(val_raw, k, add_extra)
 
             for target in ("y_mean", "y_cv"):  # un modèle séparé pour chaque cible
-                for nom_modele, modele in make_models().items():
+                for nom_modele, modele in make_models(target).items():
                     # 1. Le modèle apprend sur l'entraînement.
                     modele.fit(X_tr, y_tr[target])
 
