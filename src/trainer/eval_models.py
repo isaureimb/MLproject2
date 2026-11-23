@@ -31,8 +31,7 @@ from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from src.datasets.features_extra import build_features_extra
-from src.datasets.windowings import build_xy_cgm_only
+from src.datasets.features import build_xy
 
 
 def make_models() -> dict:
@@ -77,9 +76,9 @@ def get_xy(raw: pd.DataFrame, k: int, add_extra: bool):
 
     add_extra=True : on ajoute les trois chiffres de features_extra.py à ceux de windowings.py.
     """
-    X, y = build_xy_cgm_only(raw, k_days=k)
-    if add_extra:
-        X = X.join(build_features_extra(raw, k_days=k))  # on aligne par personne
+    X, y = build_xy(raw, k_days=k)
+    if not add_extra:
+        X = X.drop(columns=["cgm_night_mean", "cgm_day_mean"])
     return X, y
 
 

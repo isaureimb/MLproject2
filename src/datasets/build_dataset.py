@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 
 
-def prepare_cohort_b() -> None:
+def build_cohort_b_dataset() -> None:
     """
     Audit ID linkage between glucose.csv and metadata.csv, filter for Cohort B,
     and save clean processed CSV files while keeping raw data untouched.
@@ -27,10 +27,17 @@ def prepare_cohort_b() -> None:
     cohort_b_ids = set(metadata_df.loc[metadata_df["cohort"] == "cohort_b", "id"])
     cohort_b_glucose = glucose_df[glucose_df["user_id"].isin(cohort_b_ids)]
 
+    '''
+    # Split read_at into date (YYYY-MM-DD) and time (HH:MM:SS), no timezone conversion
+    timestamp = pd.to_datetime(cohort_b_glucose["read_at"], format="mixed")
+    cohort_b_glucose.insert(0, "date", timestamp.dt.strftime("%Y-%m-%d"))
+    cohort_b_glucose["read_at"] = timestamp.dt.strftime("%H:%M:%S")
+    '''    
     print(f"Cohort B participants: {cohort_b_glucose['user_id'].nunique()} | Rows: {len(cohort_b_glucose)}")
 
-    cohort_b_glucose.to_csv(out_path / "glucose_cohort_b.csv", index=False)
+    cohort_b_glucose.to_csv(out_path / "cohort_b_glucose_data.csv", index=False)
 
 
 if __name__ == "__main__":
-    prepare_cohort_b()
+    build_cohort_b_dataset()
+    
