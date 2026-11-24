@@ -64,7 +64,7 @@ def run_cross_validation(
                         "features": nom_jeu,
                         "target": target,
                         "model": nom_modele,
-                        "CV_MAE_mean": round(float(np.mean(mae_scores)), 4),
+                        "MAE": round(float(np.mean(mae_scores)), 4),
                         "CV_MAE_std": round(float(np.std(mae_scores)), 4),
                         "CV_RMSE_mean": round(float(np.mean(rmse_scores)), 4),
                         "CV_RMSE_std": round(float(np.std(rmse_scores)), 4),

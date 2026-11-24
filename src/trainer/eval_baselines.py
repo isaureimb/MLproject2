@@ -16,7 +16,7 @@ from src.metrics.calculate_error import evaluation_metrics
 
 def evaluate_baselines(horizons: list[int] = [1, 3, 5, 7]) -> pd.DataFrame:
     """
-    Evaluate Constant, Persistence, and standardized Ridge baselines on the
+    Evaluate Constant and Persistence on the
     Validation set across observation windows k in {1, 3, 5, 7} days.
     """
     project_root = Path(__file__).resolve().parents[3]
@@ -41,15 +41,9 @@ def evaluate_baselines(horizons: list[int] = [1, 3, 5, 7]) -> pd.DataFrame:
             # 2. Baseline de Persistance (value observed on the first k days)
             pred_persist = X_val[persist_col].to_numpy()
 
-            # 3. Ridge Regression with standardization adjusted only on X_train
-            ridge = make_pipeline(StandardScaler(), Ridge(alpha=1.0))
-            ridge.fit(X_train, y_tr)
-            pred_ridge = ridge.predict(X_val)
-
             for model_name, preds in [
                 ("Constant", pred_const),
                 ("Persistence", pred_persist),
-                ("Ridge_Standardized", pred_ridge),
             ]:
                 records.append({"k_days": k, "target": target, "model": model_name,
                                 **evaluation_metrics(y_va, preds)})
