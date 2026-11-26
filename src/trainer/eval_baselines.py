@@ -35,10 +35,10 @@ def evaluate_baselines(horizons: list[int] = [1, 3, 5, 7]) -> pd.DataFrame:
             y_tr = y_train[target].to_numpy()
             y_va = y_val[target].to_numpy()
 
-            # 1. Baseline Constante (mean of the training target)
+            # 1. baseline constante (mean of the training target)
             pred_const = np.full(len(y_va), np.mean(y_tr))
 
-            # 2. Baseline de Persistance (value observed on the first k days)
+            # 2. baseline of persistence (value observed on the first k days)
             pred_persist = X_val[persist_col].to_numpy()
 
             for model_name, preds in [
