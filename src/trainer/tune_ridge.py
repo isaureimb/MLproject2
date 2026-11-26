@@ -11,7 +11,7 @@ from sklearn.model_selection import KFold, cross_validate
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from src.trainer.eval_models import get_xy
+from MLproject2.src.trainer.evaluate import get_xy
 
 
 def tune_ridge_alphas(
