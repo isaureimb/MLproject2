@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold, cross_validate
 
-from src.trainer.eval_models import get_xy, make_models
+from MLproject2.src.trainer.evaluate import get_xy, make_models
 
 
 def run_cross_validation(
