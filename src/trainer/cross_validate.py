@@ -23,12 +23,12 @@ def run_cross_validation(
     project_root = Path(__file__).resolve().parents[3]
     processed = project_root / "data" / "processed"
 
-    # 1. groupe Train + Val pour le CV
+    # 1. group train + val participants in a single dataframe
     train_raw = pd.read_csv(processed / "train_12d.csv")
     val_raw = pd.read_csv(processed / "val_12d.csv")
     dev_raw = pd.concat([train_raw, val_raw], ignore_index=True)
 
-    # 2. split en k-folds
+    # 2. split into k folds for cross-validation
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
     scoring = {
