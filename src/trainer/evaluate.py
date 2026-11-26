@@ -56,4 +56,4 @@ def evaluate_basics_models(horizons=(1, 3, 5, 7)) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    evaluate_models()
+    evaluate_basics_models()
